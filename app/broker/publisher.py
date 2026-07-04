@@ -27,6 +27,9 @@ class PaymentEventPublisher:
     async def publish_processing_retry(
         self, payload: dict[str, Any], retry_count: int
     ) -> None:
+        if retry_count < 1 or retry_count > len(RETRY_ROUTING_KEYS):
+            raise ValueError(f"Invalid retry count: {retry_count}")
+
         await self.broker.publish(
             payload,
             exchange=PAYMENTS_RETRY_EXCHANGE,

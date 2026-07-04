@@ -4,6 +4,7 @@ import logging
 from faststream.rabbit import RabbitBroker
 
 from app.broker.publisher import PaymentEventPublisher
+from app.broker.topology import declare_topology
 from app.core.config import get_settings
 from app.db.session import get_sessionmaker
 from app.models.outbox import OutboxEvent
@@ -51,6 +52,8 @@ async def run_forever() -> None:
     publisher = PaymentEventPublisher(broker)
 
     async with broker:
+        await declare_topology(broker)
+
         while True:
             await publish_once(publisher, settings.outbox_batch_size)
             await asyncio.sleep(settings.outbox_poll_interval_seconds)

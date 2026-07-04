@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.time import utc_now
 from app.models.outbox import OutboxEvent, OutboxStatus
+from app.services.backoff import retry_delay_seconds
 
 
 class OutboxRepository:
@@ -50,5 +51,5 @@ class OutboxRepository:
         now = utc_now()
         event.attempts += 1
         event.last_error = error[:2000]
-        event.next_attempt_at = now + timedelta(seconds=min(2**event.attempts, 60))
+        event.next_attempt_at = now + timedelta(seconds=retry_delay_seconds(event.attempts))
         event.updated_at = now

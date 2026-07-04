@@ -10,23 +10,83 @@ FastAPI service for accepting payment requests, processing them asynchronously, 
 
 ## Start
 
+Start the full stack in the foreground:
+
 ```sh
 make up
+```
+
+Detached mode:
+
+```sh
 make up-d
+```
+
+Apply migrations manually:
+
+```sh
 make migrate
-make makemigrations name="describe schema change"
-make test
-make lint
-make format
+```
+
+Stop services:
+
+```sh
 make down
+```
+
+Clean containers and volumes:
+
+```sh
 make clean
 ```
 
 The API listens on `http://localhost:8000` when started with Docker Compose.
 
+## Local Development
+
+Generate a migration after model changes:
+
+```sh
+make makemigrations name="describe schema change"
+```
+
+Run tests:
+
+```sh
+make test
+```
+
+Run lint:
+
+```sh
+make lint
+```
+
+Format code:
+
+```sh
+make format
+```
+
+## Demo Webhook
+
+Start the API, workers, and demo webhook receiver:
+
+```sh
+make demo-up
+```
+
+Use the Docker-internal webhook URL `http://demo-webhook:9000/webhook` in payment requests.
+
+Follow demo logs:
+
+```sh
+make demo-logs
+```
+
 ## API
 
-Create a payment:
+Create a payment after starting the demo stack:
 
 ```sh
 curl -X POST http://localhost:8000/api/v1/payments \
@@ -50,16 +110,6 @@ Get a payment:
 curl http://localhost:8000/api/v1/payments/<payment_id> \
   -H "X-API-Key: dev-api-key"
 ```
-
-## Demo Webhook
-
-Start the API, workers, and demo webhook receiver:
-
-```sh
-make demo-up
-```
-
-For the Docker demo, use the Docker-internal webhook URL `http://demo-webhook:9000/webhook`.
 
 ## RabbitMQ
 

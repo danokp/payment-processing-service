@@ -14,6 +14,12 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 
+# Local planning artifacts
+docs/superpowers/
+
+# Local worktrees
+.worktrees/
+
 # IDE and OS files
 .idea/
 .vscode/

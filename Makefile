@@ -15,7 +15,7 @@ makemigrations:
 	env -u VIRTUAL_ENV UV_PROJECT_ENVIRONMENT=/tmp/nebus-payment-processing-dev-venv uv run alembic revision --autogenerate -m "$(name)"
 
 migrate:
-	$(COMPOSE) up -d postgres
+	$(COMPOSE) up -d --wait postgres
 	$(COMPOSE) run --rm --no-deps --build api alembic upgrade head
 
 test:

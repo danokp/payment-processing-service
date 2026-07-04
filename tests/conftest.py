@@ -1,5 +1,6 @@
 from collections.abc import AsyncIterator
 
+import asyncpg
 import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -10,7 +11,25 @@ from app.db.base import Base
 from app.db.session import get_session
 from app.main import create_app
 
-TEST_DATABASE_URL = "postgresql+asyncpg://payments:payments@localhost:5432/payments"
+TEST_DATABASE_NAME = "payments_test"
+TEST_DATABASE_URL = (
+    f"postgresql+asyncpg://payments:payments@localhost:5432/{TEST_DATABASE_NAME}"
+)
+ADMIN_DATABASE_URL = "postgresql://payments:payments@localhost:5432/postgres"
+
+
+@pytest.fixture(scope="session", autouse=True)
+async def ensure_test_database() -> None:
+    connection = await asyncpg.connect(ADMIN_DATABASE_URL)
+    try:
+        exists = await connection.fetchval(
+            "SELECT 1 FROM pg_database WHERE datname = $1",
+            TEST_DATABASE_NAME,
+        )
+        if not exists:
+            await connection.execute(f'CREATE DATABASE "{TEST_DATABASE_NAME}"')
+    finally:
+        await connection.close()
 
 
 @pytest.fixture

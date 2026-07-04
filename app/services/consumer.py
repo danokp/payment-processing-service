@@ -26,24 +26,42 @@ class PaymentConsumerService:
         self.gateway = gateway
         self.webhook_client = webhook_client
 
-    async def process_payment(self, payment_id: UUID) -> None:
-        payment = await self.payments.get_by_id(payment_id)
+    async def process_payment_state(self, payment_id: UUID) -> bool:
+        payment = await self.payments.get_by_id_for_update(payment_id)
         if payment is None:
             raise PaymentNotFoundError(str(payment_id))
 
         if payment.status in {PaymentStatus.SUCCEEDED, PaymentStatus.FAILED}:
-            if payment.webhook_sent_at is None:
-                if payment.processed_at is None:
-                    raise InvalidPaymentStateError(
-                        f"terminal payment {payment.id} is missing processed_at"
-                    )
-                await self._send_webhook(payment)
-            return
+            self._validate_terminal_payment(payment)
+            return payment.webhook_sent_at is None
 
         result = await self.gateway.process(payment)
         payment.status = result.status
         payment.processed_at = utc_now()
+        payment.last_webhook_error = None
+        return True
+
+    async def send_webhook(self, payment_id: UUID) -> None:
+        payment = await self.payments.get_by_id_for_update(payment_id)
+        if payment is None:
+            raise PaymentNotFoundError(str(payment_id))
+
+        if payment.status not in {PaymentStatus.SUCCEEDED, PaymentStatus.FAILED}:
+            raise InvalidPaymentStateError(
+                f"payment {payment.id} is not ready for webhook delivery"
+            )
+
+        self._validate_terminal_payment(payment)
+        if payment.webhook_sent_at is not None:
+            return
+
         await self._send_webhook(payment)
+
+    def _validate_terminal_payment(self, payment) -> None:
+        if payment.processed_at is None:
+            raise InvalidPaymentStateError(
+                f"terminal payment {payment.id} is missing processed_at"
+            )
 
     async def _send_webhook(self, payment) -> None:
         try:

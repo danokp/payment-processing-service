@@ -8,6 +8,8 @@ from app.core.time import utc_now
 from app.models.outbox import OutboxEvent, OutboxStatus
 from app.services.backoff import retry_delay_seconds
 
+MAX_OUTBOX_ATTEMPTS = 3
+
 
 class OutboxRepository:
     def __init__(self, session: AsyncSession) -> None:
@@ -51,5 +53,11 @@ class OutboxRepository:
         now = utc_now()
         event.attempts += 1
         event.last_error = error[:2000]
-        event.next_attempt_at = now + timedelta(seconds=retry_delay_seconds(event.attempts))
+        if event.attempts >= MAX_OUTBOX_ATTEMPTS:
+            event.status = OutboxStatus.FAILED
+            event.next_attempt_at = now
+        else:
+            event.next_attempt_at = now + timedelta(
+                seconds=retry_delay_seconds(event.attempts)
+            )
         event.updated_at = now

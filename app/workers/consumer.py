@@ -7,7 +7,7 @@ from faststream.rabbit import RabbitBroker
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.broker.publisher import PaymentEventPublisher
-from app.broker.retry import publish_retry_or_dlq
+from app.broker.retry import MAX_PROCESSING_ATTEMPTS, publish_retry_or_dlq
 from app.broker.topology import PAYMENTS_NEW_QUEUE, declare_topology
 from app.core.config import get_settings
 from app.db.session import get_sessionmaker
@@ -53,11 +53,12 @@ async def process_message(
     service_builder: ServiceBuilder = build_service,
     retry_scheduler: RetryScheduler = publish_retry_or_dlq,
 ) -> None:
+    payment_id = UUID(message["payment_id"])
+
     async with session_factory() as session:
         try:
-            payment_id = UUID(message["payment_id"])
             service = service_builder(session)
-            await service.process_payment(payment_id)
+            needs_webhook = await service.process_payment_state(payment_id)
         except ConsumerProcessingError as exc:
             if exc.retryable:
                 await session.commit()
@@ -65,6 +66,38 @@ async def process_message(
                 return
 
             await session.rollback()
+            await retry_scheduler(
+                retry_publisher,
+                {**message, "retry_count": MAX_PROCESSING_ATTEMPTS},
+                str(exc),
+            )
+            return
+        except Exception as exc:
+            await session.rollback()
+            await retry_scheduler(retry_publisher, message, str(exc))
+            return
+
+        await session.commit()
+
+    if not needs_webhook:
+        return
+
+    async with session_factory() as session:
+        try:
+            service = service_builder(session)
+            await service.send_webhook(payment_id)
+        except ConsumerProcessingError as exc:
+            if exc.retryable:
+                await session.commit()
+                await retry_scheduler(retry_publisher, message, str(exc))
+                return
+
+            await session.rollback()
+            await retry_scheduler(
+                retry_publisher,
+                {**message, "retry_count": MAX_PROCESSING_ATTEMPTS},
+                str(exc),
+            )
             return
         except Exception as exc:
             await session.rollback()

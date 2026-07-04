@@ -17,8 +17,13 @@ from app.services.gateway import GatewayResult
 class FakePayments:
     def __init__(self, payment):
         self.payment = payment
+        self.locked_ids = []
 
     async def get_by_id(self, payment_id):
+        return self.payment if self.payment.id == payment_id else None
+
+    async def get_by_id_for_update(self, payment_id):
+        self.locked_ids.append(payment_id)
         return self.payment if self.payment.id == payment_id else None
 
 
@@ -72,17 +77,25 @@ def make_payment(
 @pytest.mark.asyncio
 async def test_pending_payment_is_processed_and_webhook_is_sent() -> None:
     payment = make_payment()
+    payments = FakePayments(payment)
     gateway = FakeGateway()
     webhook = FakeWebhook()
-    service = PaymentConsumerService(FakePayments(payment), gateway, webhook)
+    service = PaymentConsumerService(payments, gateway, webhook)
 
-    await service.process_payment(payment.id)
+    needs_webhook = await service.process_payment_state(payment.id)
 
     assert payment.status == PaymentStatus.SUCCEEDED
     assert payment.processed_at is not None
-    assert payment.webhook_sent_at is not None
+    assert payment.webhook_sent_at is None
     assert gateway.calls == 1
+    assert webhook.calls == 0
+    assert needs_webhook is True
+    assert payments.locked_ids == [payment.id]
+
+    await service.send_webhook(payment.id)
+
     assert webhook.calls == 1
+    assert payment.webhook_sent_at is not None
 
 
 @pytest.mark.asyncio
@@ -96,10 +109,11 @@ async def test_terminal_payment_with_sent_webhook_is_ack_only() -> None:
     webhook = FakeWebhook()
     service = PaymentConsumerService(FakePayments(payment), gateway, webhook)
 
-    await service.process_payment(payment.id)
+    needs_webhook = await service.process_payment_state(payment.id)
 
     assert gateway.calls == 0
     assert webhook.calls == 0
+    assert needs_webhook is False
 
 
 @pytest.mark.asyncio
@@ -109,9 +123,14 @@ async def test_terminal_payment_without_webhook_sends_webhook_only() -> None:
     webhook = FakeWebhook()
     service = PaymentConsumerService(FakePayments(payment), gateway, webhook)
 
-    await service.process_payment(payment.id)
+    needs_webhook = await service.process_payment_state(payment.id)
 
     assert gateway.calls == 0
+    assert webhook.calls == 0
+    assert needs_webhook is True
+
+    await service.send_webhook(payment.id)
+
     assert webhook.calls == 1
     assert payment.webhook_sent_at is not None
 
@@ -123,15 +142,19 @@ async def test_webhook_failure_is_recorded_and_reraised_for_retry() -> None:
     webhook = FailingWebhook()
     service = PaymentConsumerService(FakePayments(payment), gateway, webhook)
 
-    with pytest.raises(WebhookDeliveryError, match="webhook down") as exc_info:
-        await service.process_payment(payment.id)
+    needs_webhook = await service.process_payment_state(payment.id)
 
-    assert exc_info.value.retryable is True
+    assert needs_webhook is True
     assert payment.status == PaymentStatus.SUCCEEDED
     assert payment.processed_at is not None
-    assert payment.last_webhook_error == "webhook down"
+    assert payment.last_webhook_error is None
     assert payment.webhook_sent_at is None
     assert gateway.calls == 1
+    assert webhook.calls == 0
+
+    with pytest.raises(WebhookDeliveryError, match="webhook down"):
+        await service.send_webhook(payment.id)
+
     assert webhook.calls == 1
 
 
@@ -141,7 +164,7 @@ async def test_missing_payment_is_non_retryable() -> None:
     service = PaymentConsumerService(FakePayments(payment), FakeGateway(), FakeWebhook())
 
     with pytest.raises(PaymentNotFoundError) as exc_info:
-        await service.process_payment(uuid4())
+        await service.process_payment_state(uuid4())
 
     assert exc_info.value.retryable is False
 
@@ -154,7 +177,7 @@ async def test_terminal_payment_without_processed_at_is_invalid_state() -> None:
     service = PaymentConsumerService(FakePayments(payment), gateway, webhook)
 
     with pytest.raises(InvalidPaymentStateError) as exc_info:
-        await service.process_payment(payment.id)
+        await service.process_payment_state(payment.id)
 
     assert exc_info.value.retryable is False
     assert gateway.calls == 0

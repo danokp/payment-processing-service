@@ -19,6 +19,7 @@ migrate:
 	$(COMPOSE) run --rm --no-deps --build api alembic upgrade head
 
 test:
+	$(COMPOSE) up -d --wait postgres
 	env -u VIRTUAL_ENV UV_PROJECT_ENVIRONMENT=/tmp/nebus-payment-processing-dev-venv PYTHONDONTWRITEBYTECODE=1 uv run pytest -v -p no:cacheprovider
 
 lint:

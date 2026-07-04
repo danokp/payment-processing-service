@@ -7,6 +7,7 @@ os.environ.setdefault("API_KEY", "test-key")
 os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://u:p@localhost:5432/db")
 os.environ.setdefault("RABBITMQ_URL", "amqp://guest:guest@localhost:5672/")
 
+from app.broker.retry import MAX_PROCESSING_ATTEMPTS
 from app.services.consumer import PaymentNotFoundError, WebhookDeliveryError
 from app.workers.consumer import process_message, register_topology_hook
 
@@ -31,10 +32,12 @@ class FakeSession:
 
 class FakeSessionFactory:
     def __init__(self) -> None:
-        self.session = FakeSession()
+        self.sessions = []
 
     def __call__(self) -> FakeSession:
-        return self.session
+        session = FakeSession()
+        self.sessions.append(session)
+        return session
 
 
 class FakePublisher:
@@ -52,14 +55,29 @@ async def fake_retry_scheduler(
 
 
 class FakeService:
-    def __init__(self, exc: Exception | None = None) -> None:
-        self.exc = exc
+    def __init__(
+        self,
+        exc: Exception | None = None,
+        *,
+        needs_webhook: bool = False,
+        webhook_exc: Exception | None = None,
+    ) -> None:
+        self.state_exc = exc
+        self.webhook_exc = webhook_exc
+        self.needs_webhook = needs_webhook
         self.payment_ids = []
+        self.webhook_payment_ids = []
 
-    async def process_payment(self, payment_id) -> None:
+    async def process_payment_state(self, payment_id) -> bool:
         self.payment_ids.append(payment_id)
-        if self.exc is not None:
-            raise self.exc
+        if self.state_exc is not None:
+            raise self.state_exc
+        return self.needs_webhook
+
+    async def send_webhook(self, payment_id) -> None:
+        self.webhook_payment_ids.append(payment_id)
+        if self.webhook_exc is not None:
+            raise self.webhook_exc
 
 
 class FakeApp:
@@ -120,8 +138,36 @@ async def test_process_message_commits_successful_payment() -> None:
     )
 
     assert service.payment_ids == [payment_id]
-    assert session_factory.session.commits == 1
-    assert session_factory.session.rollbacks == 0
+    assert session_factory.sessions[0].commits == 1
+    assert session_factory.sessions[0].rollbacks == 0
+    assert publisher.calls == []
+
+
+@pytest.mark.asyncio
+async def test_process_message_commits_terminal_state_before_sending_webhook() -> None:
+    payment_id = uuid4()
+    session_factory = FakeSessionFactory()
+    publisher = FakePublisher()
+
+    class ObservingService(FakeService):
+        async def send_webhook(self, observed_payment_id) -> None:
+            assert session_factory.sessions[0].commits == 1
+            await super().send_webhook(observed_payment_id)
+
+    service = ObservingService(needs_webhook=True)
+
+    await process_message(
+        {"payment_id": str(payment_id)},
+        session_factory,
+        publisher,
+        service_builder=lambda session: service,
+        retry_scheduler=fake_retry_scheduler,
+    )
+
+    assert service.payment_ids == [payment_id]
+    assert service.webhook_payment_ids == [payment_id]
+    assert session_factory.sessions[0].commits == 1
+    assert session_factory.sessions[1].commits == 1
     assert publisher.calls == []
 
 
@@ -140,9 +186,17 @@ async def test_process_message_rolls_back_and_acks_non_retryable_consumer_error(
         retry_scheduler=fake_retry_scheduler,
     )
 
-    assert session_factory.session.commits == 0
-    assert session_factory.session.rollbacks == 1
-    assert publisher.calls == []
+    assert session_factory.sessions[0].commits == 0
+    assert session_factory.sessions[0].rollbacks == 1
+    assert publisher.calls == [
+        (
+            {
+                "payment_id": str(payment_id),
+                "retry_count": MAX_PROCESSING_ATTEMPTS,
+            },
+            str(payment_id),
+        )
+    ]
 
 
 @pytest.mark.asyncio
@@ -160,8 +214,8 @@ async def test_process_message_commits_retryable_state_before_scheduling_retry()
         retry_scheduler=fake_retry_scheduler,
     )
 
-    assert session_factory.session.commits == 1
-    assert session_factory.session.rollbacks == 0
+    assert session_factory.sessions[0].commits == 1
+    assert session_factory.sessions[0].rollbacks == 0
     assert publisher.calls == [
         ({"payment_id": str(payment_id), "retry_count": 1}, "webhook down")
     ]
@@ -182,6 +236,6 @@ async def test_process_message_rolls_back_unexpected_error_before_scheduling_ret
         retry_scheduler=fake_retry_scheduler,
     )
 
-    assert session_factory.session.commits == 0
-    assert session_factory.session.rollbacks == 1
+    assert session_factory.sessions[0].commits == 0
+    assert session_factory.sessions[0].rollbacks == 1
     assert publisher.calls == [({"payment_id": str(payment_id)}, "db unavailable")]

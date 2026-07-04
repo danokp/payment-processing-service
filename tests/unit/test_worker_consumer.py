@@ -191,6 +191,26 @@ async def test_process_message_sends_missing_payment_id_to_dlq() -> None:
     ]
 
 
+@pytest.mark.parametrize("payment_id", [None, 123, [], {}])
+@pytest.mark.asyncio
+async def test_process_message_sends_non_string_payment_id_to_dlq(payment_id) -> None:
+    session_factory = FakeSessionFactory()
+    publisher = FakePublisher()
+
+    await process_message(
+        {"payment_id": payment_id},
+        session_factory,
+        publisher,
+        retry_scheduler=fake_retry_scheduler,
+    )
+
+    assert session_factory.sessions == []
+    assert publisher.calls[0][0] == {
+        "payment_id": payment_id,
+        "retry_count": MAX_PROCESSING_ATTEMPTS,
+    }
+
+
 @pytest.mark.asyncio
 async def test_process_message_commits_terminal_state_before_sending_webhook() -> None:
     payment_id = uuid4()

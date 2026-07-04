@@ -55,7 +55,7 @@ async def process_message(
 ) -> None:
     try:
         payment_id = UUID(message["payment_id"])
-    except (KeyError, ValueError) as exc:
+    except (AttributeError, KeyError, TypeError, ValueError) as exc:
         await retry_scheduler(
             retry_publisher,
             {**message, "retry_count": MAX_PROCESSING_ATTEMPTS},

@@ -1,12 +1,20 @@
-.PHONY: makemigrations migrate test lint format
+.PHONY: up up-d makemigrations migrate test lint format logs down clean demo-up demo-logs
 
 name ?= migration
+COMPOSE := docker compose
+DEMO_COMPOSE := docker compose -f docker-compose.yml -f docker-compose.demo.yml
+
+up: migrate
+	$(COMPOSE) up --build
+
+up-d: migrate
+	$(COMPOSE) up --build -d
 
 makemigrations:
 	env -u VIRTUAL_ENV UV_PROJECT_ENVIRONMENT=/tmp/nebus-payment-processing-dev-venv uv run alembic revision --autogenerate -m "$(name)"
 
 migrate:
-	env -u VIRTUAL_ENV UV_PROJECT_ENVIRONMENT=/tmp/nebus-payment-processing-dev-venv uv run alembic upgrade head
+	$(COMPOSE) run --rm --build api alembic upgrade head
 
 test:
 	env -u VIRTUAL_ENV UV_PROJECT_ENVIRONMENT=/tmp/nebus-payment-processing-dev-venv PYTHONDONTWRITEBYTECODE=1 uv run pytest -v -p no:cacheprovider
@@ -16,3 +24,18 @@ lint:
 
 format:
 	env -u VIRTUAL_ENV UV_PROJECT_ENVIRONMENT=/tmp/nebus-payment-processing-dev-venv uv run ruff format .
+
+logs:
+	$(COMPOSE) logs -f
+
+down:
+	$(DEMO_COMPOSE) down --remove-orphans
+
+clean:
+	$(DEMO_COMPOSE) down --volumes --remove-orphans
+
+demo-up: migrate
+	$(DEMO_COMPOSE) up --build
+
+demo-logs:
+	$(DEMO_COMPOSE) logs -f

@@ -1,22 +1,23 @@
-import enum
 from datetime import datetime
 from decimal import Decimal
+from enum import StrEnum
 from uuid import UUID
 
 from sqlalchemy import DateTime, Enum, Numeric, String, Text, UniqueConstraint
-from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
 
 
-class PaymentCurrency(str, enum.Enum):
+class PaymentCurrency(StrEnum):
     RUB = "RUB"
     USD = "USD"
     EUR = "EUR"
 
 
-class PaymentStatus(str, enum.Enum):
+class PaymentStatus(StrEnum):
     PENDING = "pending"
     SUCCEEDED = "succeeded"
     FAILED = "failed"
@@ -32,6 +33,8 @@ class Payment(Base):
         Enum(
             PaymentCurrency,
             name="payment_currency",
+            native_enum=False,
+            create_constraint=True,
             values_callable=lambda enum_cls: [item.value for item in enum_cls],
         ),
         nullable=False,
@@ -42,6 +45,8 @@ class Payment(Base):
         Enum(
             PaymentStatus,
             name="payment_status",
+            native_enum=False,
+            create_constraint=True,
             values_callable=lambda enum_cls: [item.value for item in enum_cls],
         ),
         nullable=False,

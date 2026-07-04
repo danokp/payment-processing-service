@@ -1,14 +1,14 @@
-import enum
 from datetime import datetime
+from enum import StrEnum
 
-from sqlalchemy import DateTime, Enum, Integer, String, Text
+from sqlalchemy import DateTime, Enum, Index, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
 
 
-class OutboxStatus(str, enum.Enum):
+class OutboxStatus(StrEnum):
     PENDING = "pending"
     PUBLISHED = "published"
     FAILED = "failed"
@@ -16,6 +16,9 @@ class OutboxStatus(str, enum.Enum):
 
 class OutboxEvent(Base):
     __tablename__ = "outbox"
+    __table_args__ = (
+        Index("ix_outbox_status_next_attempt", "status", "next_attempt_at"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     event_type: Mapped[str] = mapped_column(String(100), nullable=False)
@@ -24,6 +27,8 @@ class OutboxEvent(Base):
         Enum(
             OutboxStatus,
             name="outbox_status",
+            native_enum=False,
+            create_constraint=True,
             values_callable=lambda enum_cls: [item.value for item in enum_cls],
         ),
         nullable=False,

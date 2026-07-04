@@ -53,7 +53,15 @@ async def process_message(
     service_builder: ServiceBuilder = build_service,
     retry_scheduler: RetryScheduler = publish_retry_or_dlq,
 ) -> None:
-    payment_id = UUID(message["payment_id"])
+    try:
+        payment_id = UUID(message["payment_id"])
+    except (KeyError, ValueError) as exc:
+        await retry_scheduler(
+            retry_publisher,
+            {**message, "retry_count": MAX_PROCESSING_ATTEMPTS},
+            str(exc),
+        )
+        return
 
     async with session_factory() as session:
         try:

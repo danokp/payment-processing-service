@@ -1,8 +1,6 @@
 from app.core.time import utc_now
 from app.models.outbox import OutboxEvent, OutboxStatus
-from app.repositories.outbox import OutboxRepository
-
-MAX_OUTBOX_ATTEMPTS = 3
+from app.repositories.outbox import MAX_OUTBOX_ATTEMPTS, OutboxRepository
 
 
 def make_event(attempts: int = 0) -> OutboxEvent:

@@ -144,6 +144,54 @@ async def test_process_message_commits_successful_payment() -> None:
 
 
 @pytest.mark.asyncio
+async def test_process_message_sends_invalid_payment_id_to_dlq() -> None:
+    session_factory = FakeSessionFactory()
+    publisher = FakePublisher()
+
+    await process_message(
+        {"payment_id": "not-a-uuid"},
+        session_factory,
+        publisher,
+        retry_scheduler=fake_retry_scheduler,
+    )
+
+    assert session_factory.sessions == []
+    assert publisher.calls == [
+        (
+            {
+                "payment_id": "not-a-uuid",
+                "retry_count": MAX_PROCESSING_ATTEMPTS,
+            },
+            "badly formed hexadecimal UUID string",
+        )
+    ]
+
+
+@pytest.mark.asyncio
+async def test_process_message_sends_missing_payment_id_to_dlq() -> None:
+    session_factory = FakeSessionFactory()
+    publisher = FakePublisher()
+
+    await process_message(
+        {"unexpected": "payload"},
+        session_factory,
+        publisher,
+        retry_scheduler=fake_retry_scheduler,
+    )
+
+    assert session_factory.sessions == []
+    assert publisher.calls == [
+        (
+            {
+                "unexpected": "payload",
+                "retry_count": MAX_PROCESSING_ATTEMPTS,
+            },
+            "'payment_id'",
+        )
+    ]
+
+
+@pytest.mark.asyncio
 async def test_process_message_commits_terminal_state_before_sending_webhook() -> None:
     payment_id = uuid4()
     session_factory = FakeSessionFactory()

@@ -13,11 +13,23 @@ class IdempotencyConflictError(Exception):
 
 
 class PaymentService:
-    def __init__(self, payments, outbox) -> None:
+    def __init__(self, payments, outbox, session) -> None:
         self.payments = payments
         self.outbox = outbox
+        self.session = session
 
     async def create_payment(self, payload: PaymentCreate, idempotency_key: str) -> Payment:
+        try:
+            payment = await self._create_payment(payload, idempotency_key)
+            await self.session.commit()
+            return payment
+        except Exception:
+            await self.session.rollback()
+            raise
+
+    async def _create_payment(
+        self, payload: PaymentCreate, idempotency_key: str
+    ) -> Payment:
         request_hash = build_request_hash(payload)
         existing = await self.payments.get_by_idempotency_key(idempotency_key)
         if existing is not None:

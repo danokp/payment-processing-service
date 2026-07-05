@@ -2,10 +2,8 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import get_payment_service, require_api_key
-from app.db.session import get_session
 from app.schemas.payments import PaymentCreate, PaymentCreateResponse, PaymentRead
 from app.services.payments import IdempotencyConflictError, PaymentService
 
@@ -25,13 +23,10 @@ async def create_payment(
     payload: PaymentCreate,
     idempotency_key: Annotated[str, Header(alias="Idempotency-Key")],
     service: Annotated[PaymentService, Depends(get_payment_service)],
-    session: Annotated[AsyncSession, Depends(get_session)],
 ) -> PaymentCreateResponse:
     try:
         payment = await service.create_payment(payload, idempotency_key)
-        await session.commit()
     except IdempotencyConflictError as exc:
-        await session.rollback()
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Idempotency key was used with another request",

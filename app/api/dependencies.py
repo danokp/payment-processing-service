@@ -27,4 +27,4 @@ async def require_api_key(
 def get_payment_service(
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> PaymentService:
-    return PaymentService(PaymentRepository(session), OutboxRepository(session))
+    return PaymentService(PaymentRepository(session), OutboxRepository(session), session)

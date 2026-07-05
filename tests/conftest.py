@@ -18,7 +18,7 @@ TEST_DATABASE_URL = (
 ADMIN_DATABASE_URL = "postgresql://payments:payments@localhost:5432/postgres"
 
 
-@pytest.fixture(scope="session", autouse=True)
+@pytest.fixture(scope="session")
 async def ensure_test_database() -> None:
     connection = await asyncpg.connect(ADMIN_DATABASE_URL)
     try:
@@ -44,6 +44,7 @@ def test_settings() -> Settings:
 @pytest.fixture
 async def session_factory(
     test_settings: Settings,
+    ensure_test_database: None,
 ) -> AsyncIterator[async_sessionmaker[AsyncSession]]:
     engine = create_async_engine(test_settings.database_url)
 

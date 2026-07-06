@@ -1,5 +1,86 @@
 # Async Payment Processing Service
 
+## Как протестировать функционал из тестового задания
+
+1. Запустить демо-стек:
+
+```sh
+make demo-up
+```
+
+Эта команда поднимает `postgres`, `rabbitmq`, `api`, `outbox-publisher`,
+`consumer` и тестовый получатель webhook `demo-webhook`.
+
+2. Создать платеж:
+
+```sh
+curl -X POST http://localhost:8000/api/v1/payments \
+  -H "X-API-Key: dev-api-key" \
+  -H "Idempotency-Key: order-1001-payment" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "amount": "10.00",
+    "currency": "RUB",
+    "description": "Order 1001",
+    "metadata": {
+      "order_id": "1001"
+    },
+    "webhook_url": "http://demo-webhook:9000/webhook"
+  }'
+```
+
+В ответе должен вернуться `202 Accepted`, `payment_id`, статус `pending` и
+`created_at`. Это проверяет API создания платежа, API key и idempotency key.
+
+3. Дождаться обработки платежа.
+
+Consumer эмулирует внешний платежный шлюз: ждет 2-5 секунд и выставляет
+финальный статус `succeeded` или `failed` с вероятностью успеха 90%.
+
+4. Проверить платеж по `payment_id` из ответа:
+
+```sh
+curl http://localhost:8000/api/v1/payments/<payment_id> \
+  -H "X-API-Key: dev-api-key"
+```
+
+Ожидаемый результат: статус уже не `pending`, а `succeeded` или `failed`,
+поле `processed_at` заполнено. Это подтверждает, что асинхронная обработка
+платежа действительно произошла.
+
+5. Проверить webhook.
+
+В логах команды `make demo-up` должна появиться строка от `demo-webhook`:
+
+```text
+{"received_webhook": {"payment_id": "...", "status": "succeeded", ...}}
+```
+
+Это подтверждает, что consumer отправил уведомление о результате обработки.
+Если нужно смотреть логи отдельно, в другом терминале можно запустить:
+
+```sh
+make demo-logs
+```
+
+6. Проверить идемпотентность.
+
+Повторить запрос из шага 2 с тем же `Idempotency-Key` и тем же body. В ответ
+должен вернуться тот же `payment_id`. Если отправить тот же `Idempotency-Key`,
+но изменить body, сервис должен вернуть `409 Conflict`.
+
+7. Проверить RabbitMQ.
+
+RabbitMQ Management UI доступен по адресу `http://localhost:15672`,
+логин/пароль: `guest` / `guest`. Там можно увидеть очереди:
+`payments.new`, `payments.retry.1`, `payments.retry.2`, `payments.retry.3`,
+`payments.dlq`.
+
+Итоговая проверяемая цепочка: `POST /api/v1/payments` создает платеж и outbox
+событие, `outbox-publisher` публикует событие в RabbitMQ, `consumer` получает
+сообщение, эмулирует обработку платежа, обновляет статус в БД и отправляет
+webhook в `demo-webhook`.
+
 FastAPI service for accepting payment requests, processing them asynchronously, and delivering webhook notifications.
 
 ## Requirements

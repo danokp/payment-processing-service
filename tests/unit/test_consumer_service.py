@@ -4,7 +4,7 @@ from uuid import uuid4
 import pytest
 
 from app.core.time import utc_now
-from app.models.payment import Payment, PaymentCurrency, PaymentStatus
+from app.db.models.payment import Payment, PaymentCurrency, PaymentStatus
 from app.services.consumer import (
     InvalidPaymentStateError,
     PaymentConsumerService,

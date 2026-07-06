@@ -1,6 +1,7 @@
 import pytest
 
 from app.broker.retry import publish_retry_or_dlq
+from app.core.config import Settings
 
 
 class FakePublisher:
@@ -15,12 +16,20 @@ class FakePublisher:
         self.dlqs.append((payload, error))
 
 
+def make_settings() -> Settings:
+    return Settings(
+        API_KEY="secret",
+        DATABASE_URL="postgresql+asyncpg://u:p@localhost:5432/db",
+        RABBITMQ_URL="amqp://guest:guest@localhost:5672/",
+    )
+
+
 @pytest.mark.asyncio
 async def test_missing_retry_count_publishes_first_retry() -> None:
     publisher = FakePublisher()
     payload = {"payment_id": "payment-1"}
 
-    await publish_retry_or_dlq(publisher, payload, "failed")
+    await publish_retry_or_dlq(publisher, payload, "failed", settings=make_settings())
 
     assert publisher.retries == [({"payment_id": "payment-1", "retry_count": 1}, 1)]
     assert publisher.dlqs == []
@@ -31,7 +40,7 @@ async def test_existing_retry_count_publishes_next_retry() -> None:
     publisher = FakePublisher()
     payload = {"payment_id": "payment-1", "retry_count": 2}
 
-    await publish_retry_or_dlq(publisher, payload, "failed")
+    await publish_retry_or_dlq(publisher, payload, "failed", settings=make_settings())
 
     assert publisher.retries == [({"payment_id": "payment-1", "retry_count": 3}, 3)]
     assert publisher.dlqs == []
@@ -42,7 +51,7 @@ async def test_max_retry_count_publishes_dlq() -> None:
     publisher = FakePublisher()
     payload = {"payment_id": "payment-1", "retry_count": 3}
 
-    await publish_retry_or_dlq(publisher, payload, "failed")
+    await publish_retry_or_dlq(publisher, payload, "failed", settings=make_settings())
 
     assert publisher.retries == []
     assert publisher.dlqs == [(payload, "failed")]
@@ -56,7 +65,7 @@ async def test_invalid_retry_count_is_normalized_before_increment(
     publisher = FakePublisher()
     payload = {"payment_id": "payment-1", "retry_count": retry_count}
 
-    await publish_retry_or_dlq(publisher, payload, "failed")
+    await publish_retry_or_dlq(publisher, payload, "failed", settings=make_settings())
 
     assert publisher.retries == [({"payment_id": "payment-1", "retry_count": 1}, 1)]
     assert publisher.dlqs == []

@@ -7,8 +7,8 @@ from faststream.rabbit import RabbitBroker
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.broker.publisher import PaymentEventPublisher
-from app.broker.retry import MAX_PROCESSING_ATTEMPTS, publish_retry_or_dlq
-from app.broker.topology import PAYMENTS_NEW_QUEUE, declare_topology
+from app.broker.retry import max_processing_attempts, publish_retry_or_dlq
+from app.broker.topology import PAYMENTS_NEW_QUEUE, build_retry_routing_keys, declare_topology
 from app.core.config import get_settings
 from app.db.session import get_sessionmaker
 from app.repositories.payments import PaymentRepository
@@ -17,7 +17,7 @@ from app.services.gateway import RandomPaymentGateway
 from app.services.webhooks import WebhookClient
 
 settings = get_settings()
-broker = RabbitBroker(settings.rabbitmq_url)
+broker = RabbitBroker(settings.RABBITMQ_URL)
 app = FastStream(broker)
 
 ServiceBuilder = Callable[[AsyncSession], PaymentConsumerService]
@@ -28,7 +28,27 @@ def build_service(session: AsyncSession) -> PaymentConsumerService:
     return PaymentConsumerService(
         PaymentRepository(session),
         RandomPaymentGateway(settings),
-        WebhookClient(settings.webhook_timeout_seconds),
+        WebhookClient(settings.WEBHOOK_TIMEOUT_SECONDS),
+    )
+
+
+def build_retry_publisher(broker: RabbitBroker) -> PaymentEventPublisher:
+    return PaymentEventPublisher(
+        broker,
+        retry_routing_keys=build_retry_routing_keys(settings),
+    )
+
+
+async def schedule_retry_or_dlq(
+    retry_publisher: PaymentEventPublisher,
+    payload: dict[str, Any],
+    error: str,
+) -> None:
+    await publish_retry_or_dlq(
+        retry_publisher,
+        payload,
+        error,
+        settings=settings,
     )
 
 
@@ -39,7 +59,7 @@ def register_topology_hook(stream_app: FastStream, broker: RabbitBroker) -> None
 
     @startup
     async def setup_broker_topology() -> None:
-        await declare_topology(broker)
+        await declare_topology(broker, settings)
 
 
 register_topology_hook(app, broker)
@@ -51,14 +71,14 @@ async def process_message(
     retry_publisher: PaymentEventPublisher,
     *,
     service_builder: ServiceBuilder = build_service,
-    retry_scheduler: RetryScheduler = publish_retry_or_dlq,
+    retry_scheduler: RetryScheduler = schedule_retry_or_dlq,
 ) -> None:
     try:
         payment_id = UUID(message["payment_id"])
     except (AttributeError, KeyError, TypeError, ValueError) as exc:
         await retry_scheduler(
             retry_publisher,
-            {**message, "retry_count": MAX_PROCESSING_ATTEMPTS},
+            {**message, "retry_count": max_processing_attempts(settings)},
             str(exc),
         )
         return
@@ -76,7 +96,7 @@ async def process_message(
             await session.rollback()
             await retry_scheduler(
                 retry_publisher,
-                {**message, "retry_count": MAX_PROCESSING_ATTEMPTS},
+                {**message, "retry_count": max_processing_attempts(settings)},
                 str(exc),
             )
             return
@@ -103,7 +123,7 @@ async def process_message(
             await session.rollback()
             await retry_scheduler(
                 retry_publisher,
-                {**message, "retry_count": MAX_PROCESSING_ATTEMPTS},
+                {**message, "retry_count": max_processing_attempts(settings)},
                 str(exc),
             )
             return
@@ -120,5 +140,5 @@ async def handle_payment_created(message: dict[str, Any]) -> None:
     await process_message(
         message,
         get_sessionmaker(),
-        PaymentEventPublisher(broker),
+        build_retry_publisher(broker),
     )

@@ -1,6 +1,7 @@
+from app.core.config import Settings
 from app.core.time import utc_now
-from app.models.outbox import OutboxEvent, OutboxStatus
-from app.repositories.outbox import MAX_OUTBOX_ATTEMPTS, OutboxRepository
+from app.db.models.outbox import OutboxEvent, OutboxStatus
+from app.repositories.outbox import OutboxRepository
 
 
 def make_event(attempts: int = 0) -> OutboxEvent:
@@ -17,11 +18,16 @@ def make_event(attempts: int = 0) -> OutboxEvent:
 
 
 def test_publish_failure_marks_event_failed_after_max_attempts() -> None:
-    event = make_event(attempts=MAX_OUTBOX_ATTEMPTS - 1)
-    repository = OutboxRepository(session=None)
+    settings = Settings(
+        API_KEY="secret",
+        DATABASE_URL="postgresql+asyncpg://u:p@localhost:5432/db",
+        RABBITMQ_URL="amqp://guest:guest@localhost:5672/",
+    )
+    event = make_event(attempts=settings.DEFAULT_OUTBOX_MAX_ATTEMPTS - 1)
+    repository = OutboxRepository(session=None, settings=settings)
 
     repository.mark_publish_failed(event, "unsupported event")
 
-    assert event.attempts == MAX_OUTBOX_ATTEMPTS
+    assert event.attempts == settings.DEFAULT_OUTBOX_MAX_ATTEMPTS
     assert event.status == OutboxStatus.FAILED
     assert event.last_error == "unsupported event"

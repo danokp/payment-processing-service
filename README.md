@@ -10,6 +10,16 @@ FastAPI service for accepting payment requests, processing them asynchronously, 
 
 ## Start
 
+Prepare a local uv environment for development on a new machine:
+
+```sh
+make setup
+```
+
+This installs Python 3.12 for uv if needed and syncs dependencies from `uv.lock`.
+It is not required before `make up`: Docker Compose builds the application image
+with Python 3.12 and installs production dependencies inside the container.
+
 Start the full stack in the foreground:
 
 ```sh
@@ -43,6 +53,12 @@ make clean
 The API listens on `http://localhost:8000` when started with Docker Compose.
 
 ## Local Development
+
+Prepare or refresh the local uv environment:
+
+```sh
+make setup
+```
 
 Generate a migration after model changes:
 
@@ -120,10 +136,3 @@ Relevant queues:
 - `payments.new`
 - Retry queues `payments.retry.1`, `payments.retry.2`, and `payments.retry.3`
 - DLQ queue `payments.dlq`, bound with routing key `payments.new.dlq`
-
-## Design Trade-offs
-
-- Webhooks are unsigned in the base implementation.
-- Webhook retry state is tracked on payments with `webhook_sent_at` and `last_webhook_error`.
-- A separate webhook delivery ledger is a possible extension.
-- Payment gateway behavior is random in production and deterministic in tests through dependency injection.

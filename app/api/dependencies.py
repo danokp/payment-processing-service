@@ -18,7 +18,7 @@ async def require_api_key(
     settings: Annotated[Settings, Depends(get_api_key_settings)],
     x_api_key: Annotated[str | None, Header(alias="X-API-Key")] = None,
 ) -> None:
-    if x_api_key != settings.api_key:
+    if x_api_key != settings.API_KEY:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid API key"
         )
@@ -26,5 +26,10 @@ async def require_api_key(
 
 def get_payment_service(
     session: Annotated[AsyncSession, Depends(get_session)],
+    settings: Annotated[Settings, Depends(get_api_key_settings)],
 ) -> PaymentService:
-    return PaymentService(PaymentRepository(session), OutboxRepository(session), session)
+    return PaymentService(
+        PaymentRepository(session),
+        OutboxRepository(session, settings=settings),
+        session,
+    )

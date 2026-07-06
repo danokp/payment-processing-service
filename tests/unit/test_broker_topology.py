@@ -6,13 +6,12 @@ from app.broker.topology import (
     PAYMENTS_DLX,
     PAYMENTS_EXCHANGE,
     PAYMENTS_NEW_QUEUE,
-    PAYMENTS_RETRY_1_QUEUE,
-    PAYMENTS_RETRY_2_QUEUE,
-    PAYMENTS_RETRY_3_QUEUE,
     PAYMENTS_RETRY_EXCHANGE,
-    RETRY_ROUTING_KEYS,
+    build_retry_queues,
+    build_retry_routing_keys,
     declare_topology,
 )
+from app.core.config import Settings
 
 
 class FakeDeclaredQueue:
@@ -40,18 +39,46 @@ class FakeBroker:
 
 
 def test_topology_queue_routing_keys_match_bindings() -> None:
+    settings = Settings(
+        API_KEY="secret",
+        DATABASE_URL="postgresql+asyncpg://u:p@localhost:5432/db",
+        RABBITMQ_URL="amqp://guest:guest@localhost:5672/",
+    )
+    retry_queues = build_retry_queues(settings)
+    retry_routing_keys = build_retry_routing_keys(settings)
+
     assert PAYMENTS_NEW_QUEUE.routing_key == PAYMENT_CREATED_ROUTING_KEY
-    assert PAYMENTS_RETRY_1_QUEUE.routing_key == RETRY_ROUTING_KEYS[0]
-    assert PAYMENTS_RETRY_2_QUEUE.routing_key == RETRY_ROUTING_KEYS[1]
-    assert PAYMENTS_RETRY_3_QUEUE.routing_key == RETRY_ROUTING_KEYS[2]
+    assert tuple(queue.routing_key for queue in retry_queues) == retry_routing_keys
     assert DLQ_ROUTING_KEY == "payments.new.dlq"
+
+
+def test_retry_queues_match_processing_retry_delays() -> None:
+    settings = Settings(
+        API_KEY="secret",
+        DATABASE_URL="postgresql+asyncpg://u:p@localhost:5432/db",
+        RABBITMQ_URL="amqp://guest:guest@localhost:5672/",
+    )
+
+    retry_queues = build_retry_queues(settings)
+
+    assert len(retry_queues) == len(settings.DEFAULT_PAYMENT_PROCESSING_RETRY_DELAYS_SECONDS)
+    assert tuple(
+        queue.arguments["x-message-ttl"] for queue in retry_queues
+    ) == tuple(delay * 1000 for delay in settings.DEFAULT_PAYMENT_PROCESSING_RETRY_DELAYS_SECONDS)
 
 
 @pytest.mark.asyncio
 async def test_declare_topology_binds_queues_to_published_exchanges() -> None:
     broker = FakeBroker()
+    settings = Settings(
+        API_KEY="secret",
+        DATABASE_URL="postgresql+asyncpg://u:p@localhost:5432/db",
+        RABBITMQ_URL="amqp://guest:guest@localhost:5672/",
+    )
+    retry_queues = build_retry_queues(settings)
+    retry_routing_keys = build_retry_routing_keys(settings)
 
-    await declare_topology(broker)
+    await declare_topology(broker, settings)
 
     assert set(broker.exchanges) == {
         PAYMENTS_EXCHANGE.name,
@@ -61,15 +88,10 @@ async def test_declare_topology_binds_queues_to_published_exchanges() -> None:
     assert broker.queues[PAYMENTS_NEW_QUEUE.name].bindings == [
         (PAYMENTS_EXCHANGE.name, PAYMENT_CREATED_ROUTING_KEY)
     ]
-    assert broker.queues[PAYMENTS_RETRY_1_QUEUE.name].bindings == [
-        (PAYMENTS_RETRY_EXCHANGE.name, RETRY_ROUTING_KEYS[0])
-    ]
-    assert broker.queues[PAYMENTS_RETRY_2_QUEUE.name].bindings == [
-        (PAYMENTS_RETRY_EXCHANGE.name, RETRY_ROUTING_KEYS[1])
-    ]
-    assert broker.queues[PAYMENTS_RETRY_3_QUEUE.name].bindings == [
-        (PAYMENTS_RETRY_EXCHANGE.name, RETRY_ROUTING_KEYS[2])
-    ]
+    for queue, routing_key in zip(retry_queues, retry_routing_keys, strict=True):
+        assert broker.queues[queue.name].bindings == [
+            (PAYMENTS_RETRY_EXCHANGE.name, routing_key)
+        ]
     assert broker.queues["payments.dlq"].bindings == [
         (PAYMENTS_DLX.name, DLQ_ROUTING_KEY)
     ]

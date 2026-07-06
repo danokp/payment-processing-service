@@ -1,11 +1,36 @@
+from typing import Protocol
 from uuid import UUID
 
 from uuid6 import uuid7
 
 from app.core.time import utc_now
-from app.models.payment import Payment, PaymentStatus
+from app.db.models.payment import Payment, PaymentStatus
 from app.schemas.payments import PaymentCreate
-from app.services.idempotency import build_request_hash
+from app.utils.idempotency import build_request_hash
+
+
+class PaymentWriter(Protocol):
+    async def get_by_id(self, payment_id: UUID) -> Payment | None:
+        raise NotImplementedError
+
+    async def get_by_idempotency_key(self, key: str) -> Payment | None:
+        raise NotImplementedError
+
+    async def add_if_absent(self, payment: Payment) -> bool:
+        raise NotImplementedError
+
+
+class OutboxWriter(Protocol):
+    async def add_payment_created(self, payment_id: UUID) -> object:
+        raise NotImplementedError
+
+
+class TransactionSession(Protocol):
+    async def commit(self) -> None:
+        raise NotImplementedError
+
+    async def rollback(self) -> None:
+        raise NotImplementedError
 
 
 class IdempotencyConflictError(Exception):
@@ -13,7 +38,12 @@ class IdempotencyConflictError(Exception):
 
 
 class PaymentService:
-    def __init__(self, payments, outbox, session) -> None:
+    def __init__(
+        self,
+        payments: PaymentWriter,
+        outbox: OutboxWriter,
+        session: TransactionSession,
+    ) -> None:
         self.payments = payments
         self.outbox = outbox
         self.session = session

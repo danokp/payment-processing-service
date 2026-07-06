@@ -1,6 +1,5 @@
 from functools import lru_cache
 
-from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -12,16 +11,19 @@ class Settings(BaseSettings):
         populate_by_name=True,
     )
 
-    app_env: str = "local"
-    api_key: str = Field(alias="API_KEY")
-    database_url: str = Field(alias="DATABASE_URL")
-    rabbitmq_url: str = Field(alias="RABBITMQ_URL")
-    payment_gateway_min_delay_seconds: int = 2
-    payment_gateway_max_delay_seconds: int = 5
-    payment_gateway_success_rate: float = 0.9
-    outbox_poll_interval_seconds: float = 1.0
-    outbox_batch_size: int = 50
-    webhook_timeout_seconds: float = 5.0
+    APP_ENV: str = "local"
+    API_KEY: str
+    DATABASE_URL: str
+    RABBITMQ_URL: str
+    PAYMENT_GATEWAY_MIN_DELAY_SECONDS: int = 2
+    PAYMENT_GATEWAY_MAX_DELAY_SECONDS: int = 5
+    PAYMENT_GATEWAY_SUCCESS_RATE: float = 0.9
+    OUTBOX_POLL_INTERVAL_SECONDS: float = 1.0
+    OUTBOX_BATCH_SIZE: int = 50
+    DEFAULT_OUTBOX_MAX_ATTEMPTS: int = 3
+    DEFAULT_OUTBOX_RETRY_CAP_SECONDS: int = 60
+    WEBHOOK_TIMEOUT_SECONDS: float = 5.0
+    DEFAULT_PAYMENT_PROCESSING_RETRY_DELAYS_SECONDS: tuple[int, ...] = (2, 4, 8)
 
 
 @lru_cache

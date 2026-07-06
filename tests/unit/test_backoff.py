@@ -1,4 +1,4 @@
-from app.services.backoff import retry_delay_seconds
+from app.utils.backoff import retry_delay_seconds
 
 
 def test_retry_delay_is_exponential() -> None:

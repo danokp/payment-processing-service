@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from app.core.config import Settings
-from app.models.payment import Payment, PaymentStatus
+from app.db.models.payment import Payment, PaymentStatus
 
 
 @dataclass(frozen=True)
@@ -23,13 +23,13 @@ class RandomPaymentGateway:
 
     async def process(self, payment: Payment) -> GatewayResult:
         delay = random.uniform(
-            self.settings.payment_gateway_min_delay_seconds,
-            self.settings.payment_gateway_max_delay_seconds,
+            self.settings.PAYMENT_GATEWAY_MIN_DELAY_SECONDS,
+            self.settings.PAYMENT_GATEWAY_MAX_DELAY_SECONDS,
         )
         await asyncio.sleep(delay)
         status = (
             PaymentStatus.SUCCEEDED
-            if random.random() < self.settings.payment_gateway_success_rate
+            if random.random() < self.settings.PAYMENT_GATEWAY_SUCCESS_RATE
             else PaymentStatus.FAILED
         )
         return GatewayResult(status=status)

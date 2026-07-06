@@ -1,6 +1,6 @@
 import httpx
 
-from app.models.payment import Payment
+from app.db.models.payment import Payment
 
 
 class WebhookClient:

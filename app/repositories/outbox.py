@@ -4,16 +4,23 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import Settings, get_settings
 from app.core.time import utc_now
-from app.models.outbox import OutboxEvent, OutboxStatus
-from app.services.backoff import retry_delay_seconds
-
-MAX_OUTBOX_ATTEMPTS = 3
+from app.db.models.outbox import OutboxEvent, OutboxStatus
+from app.utils.backoff import retry_delay_seconds
 
 
 class OutboxRepository:
-    def __init__(self, session: AsyncSession) -> None:
+    def __init__(
+        self,
+        session: AsyncSession,
+        *,
+        settings: Settings | None = None,
+    ) -> None:
+        settings = settings or get_settings()
         self.session = session
+        self.max_attempts = settings.DEFAULT_OUTBOX_MAX_ATTEMPTS
+        self.retry_cap_seconds = settings.DEFAULT_OUTBOX_RETRY_CAP_SECONDS
 
     async def add_payment_created(self, payment_id: UUID) -> OutboxEvent:
         now = utc_now()
@@ -53,11 +60,14 @@ class OutboxRepository:
         now = utc_now()
         event.attempts += 1
         event.last_error = error[:2000]
-        if event.attempts >= MAX_OUTBOX_ATTEMPTS:
+        if event.attempts >= self.max_attempts:
             event.status = OutboxStatus.FAILED
             event.next_attempt_at = now
         else:
             event.next_attempt_at = now + timedelta(
-                seconds=retry_delay_seconds(event.attempts)
+                seconds=retry_delay_seconds(
+                    event.attempts,
+                    cap_seconds=self.retry_cap_seconds,
+                )
             )
         event.updated_at = now

@@ -2,7 +2,7 @@ from decimal import Decimal
 
 import pytest
 
-from app.models.payment import PaymentStatus
+from app.db.models.payment import PaymentStatus
 from app.schemas.payments import PaymentCreate
 from app.services.payments import IdempotencyConflictError, PaymentService
 

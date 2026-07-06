@@ -4,7 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.payment import Payment
+from app.db.models.payment import Payment
 
 
 class PaymentRepository:
@@ -33,14 +33,14 @@ class PaymentRepository:
 
     async def add_if_absent(self, payment: Payment) -> bool:
         result = await self.session.execute(
-            insert(Payment.__table__)
+            insert(Payment)
             .values(
                 {
                     "id": payment.id,
                     "amount": payment.amount,
                     "currency": payment.currency,
                     "description": payment.description,
-                    "metadata": payment.metadata_,
+                    "metadata_": payment.metadata_,
                     "status": payment.status,
                     "idempotency_key": payment.idempotency_key,
                     "request_hash": payment.request_hash,

@@ -1,7 +1,7 @@
 from decimal import Decimal
 
 from app.schemas.payments import PaymentCreate
-from app.services.idempotency import build_request_hash
+from app.utils.idempotency import build_request_hash
 
 
 def test_request_hash_is_stable_for_equivalent_payloads() -> None:

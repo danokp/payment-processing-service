@@ -5,7 +5,7 @@ from uuid import uuid4
 import pytest
 from pydantic import ValidationError
 
-from app.models.payment import Payment, PaymentCurrency, PaymentStatus
+from app.db.models.payment import Payment, PaymentCurrency, PaymentStatus
 from app.schemas.payments import PaymentCreate, PaymentRead
 
 

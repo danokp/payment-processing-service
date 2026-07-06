@@ -5,7 +5,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator
 
-from app.models.payment import PaymentCurrency, PaymentStatus
+from app.db.models.payment import PaymentCurrency, PaymentStatus
 
 
 class PaymentCreate(BaseModel):

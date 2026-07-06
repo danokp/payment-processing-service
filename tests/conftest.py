@@ -46,7 +46,7 @@ async def session_factory(
     test_settings: Settings,
     ensure_test_database: None,
 ) -> AsyncIterator[async_sessionmaker[AsyncSession]]:
-    engine = create_async_engine(test_settings.database_url)
+    engine = create_async_engine(test_settings.DATABASE_URL)
 
     async with engine.begin() as connection:
         await connection.run_sync(Base.metadata.drop_all)

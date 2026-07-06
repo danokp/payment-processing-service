@@ -7,7 +7,7 @@ os.environ.setdefault("API_KEY", "test-key")
 os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://u:p@localhost:5432/db")
 os.environ.setdefault("RABBITMQ_URL", "amqp://guest:guest@localhost:5672/")
 
-from app.broker.retry import MAX_PROCESSING_ATTEMPTS
+from app.broker.retry import max_processing_attempts
 from app.services.consumer import PaymentNotFoundError, WebhookDeliveryError
 from app.workers.consumer import process_message, register_topology_hook
 
@@ -104,8 +104,9 @@ async def test_register_topology_hook_prefers_after_startup(monkeypatch) -> None
     app = FakeApp()
     broker = FakeBroker()
 
-    async def fake_declare_topology(callback_broker) -> None:
+    async def fake_declare_topology(callback_broker, callback_settings=None) -> None:
         assert callback_broker is broker
+        assert callback_settings is not None
         callback_broker.topology_declared = True
 
     monkeypatch.setattr(
@@ -160,7 +161,7 @@ async def test_process_message_sends_invalid_payment_id_to_dlq() -> None:
         (
             {
                 "payment_id": "not-a-uuid",
-                "retry_count": MAX_PROCESSING_ATTEMPTS,
+                "retry_count": max_processing_attempts(),
             },
             "badly formed hexadecimal UUID string",
         )
@@ -184,7 +185,7 @@ async def test_process_message_sends_missing_payment_id_to_dlq() -> None:
         (
             {
                 "unexpected": "payload",
-                "retry_count": MAX_PROCESSING_ATTEMPTS,
+                "retry_count": max_processing_attempts(),
             },
             "'payment_id'",
         )
@@ -207,7 +208,7 @@ async def test_process_message_sends_non_string_payment_id_to_dlq(payment_id) ->
     assert session_factory.sessions == []
     assert publisher.calls[0][0] == {
         "payment_id": payment_id,
-        "retry_count": MAX_PROCESSING_ATTEMPTS,
+        "retry_count": max_processing_attempts(),
     }
 
 
@@ -260,7 +261,7 @@ async def test_process_message_rolls_back_and_acks_non_retryable_consumer_error(
         (
             {
                 "payment_id": str(payment_id),
-                "retry_count": MAX_PROCESSING_ATTEMPTS,
+                "retry_count": max_processing_attempts(),
             },
             str(payment_id),
         )

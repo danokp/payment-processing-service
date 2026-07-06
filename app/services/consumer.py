@@ -1,7 +1,24 @@
+from typing import Protocol
 from uuid import UUID
 
 from app.core.time import utc_now
-from app.models.payment import PaymentStatus
+from app.db.models.payment import Payment, PaymentStatus
+from app.services.gateway import GatewayResult
+
+
+class PaymentReader(Protocol):
+    async def get_by_id_for_update(self, payment_id: UUID) -> Payment | None:
+        raise NotImplementedError
+
+
+class PaymentGateway(Protocol):
+    async def process(self, payment: Payment) -> GatewayResult:
+        raise NotImplementedError
+
+
+class PaymentWebhookClient(Protocol):
+    async def send_payment_result(self, payment: Payment) -> None:
+        raise NotImplementedError
 
 
 class ConsumerProcessingError(Exception):
@@ -21,7 +38,12 @@ class WebhookDeliveryError(ConsumerProcessingError):
 
 
 class PaymentConsumerService:
-    def __init__(self, payments, gateway, webhook_client) -> None:
+    def __init__(
+        self,
+        payments: PaymentReader,
+        gateway: PaymentGateway,
+        webhook_client: PaymentWebhookClient,
+    ) -> None:
         self.payments = payments
         self.gateway = gateway
         self.webhook_client = webhook_client
@@ -57,13 +79,13 @@ class PaymentConsumerService:
 
         await self._send_webhook(payment)
 
-    def _validate_terminal_payment(self, payment) -> None:
+    def _validate_terminal_payment(self, payment: Payment) -> None:
         if payment.processed_at is None:
             raise InvalidPaymentStateError(
                 f"terminal payment {payment.id} is missing processed_at"
             )
 
-    async def _send_webhook(self, payment) -> None:
+    async def _send_webhook(self, payment: Payment) -> None:
         try:
             await self.webhook_client.send_payment_result(payment)
         except Exception as exc:
